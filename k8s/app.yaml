@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  namespace: lucky-numbers
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: lucky-numbers-api
+  template:
+    metadata:
+      labels:
+        app: lucky-numbers-api
+    spec:
+      containers:
+      - name: app
+        image: your-dockerhub-username/lucky-numbers-api:latest
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: app-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: lucky-numbers
+spec:
+  selector:
+    app: lucky-numbers-api
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: lucky-numbers
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - your-domain.com
+    secretName: app-tls
+  rules:
+  - host: your-domain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app-service
+            port:
+              number: 80

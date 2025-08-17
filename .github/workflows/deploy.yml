@@ -1,0 +1,40 @@
+name: Deploy to EKS
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push
+        env:
+          DOCKER_REPO: daothevinh123/lucky_numbers
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $DOCKER_REPO:$IMAGE_TAG .
+          docker push $DOCKER_REPO:$IMAGE_TAG
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name luckey-number --region us-east-1
+
+      - name: Deploy to EKS
+        run: |
+          kubectl set image deployment/app app=daothevinh123/lucky_numbers:latest
+          kubectl rollout status deployment/app

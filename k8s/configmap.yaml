@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: lucky-numbers
+data:
+  NODE_ENV: "production"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_DATABASE: "nestjs_db"
+  PORT: "3000"
