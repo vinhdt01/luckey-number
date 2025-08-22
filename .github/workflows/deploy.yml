@@ -19,10 +19,12 @@ jobs:
       - name: Build and Push
         env:
           DOCKER_REPO: daothevinh123/lucky_numbers
-          IMAGE_TAG: latest
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $DOCKER_REPO:$IMAGE_TAG .
           docker push $DOCKER_REPO:$IMAGE_TAG
+          docker tag $DOCKER_REPO:$IMAGE_TAG $DOCKER_REPO:latest
+          docker push $DOCKER_REPO:latest
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v2
@@ -36,5 +38,14 @@ jobs:
 
       - name: Deploy to EKS
         run: |
-          kubectl set image deployment/app app=daothevinh123/lucky_numbers:latest
-          kubectl rollout status deployment/app
+          # Apply deployment (creates if doesn't exist, updates if exists)
+          kubectl apply -f k8s/deployment.yaml
+          
+          # Update image to trigger rollout
+          kubectl set image deployment/app app=daothevinh123/lucky_numbers:${{ github.sha }}
+          
+          # Wait for rollout to complete
+          kubectl rollout status deployment/app --timeout=300s
+          
+          # Show deployment status
+          kubectl get pods -l app=lucky-numbers
