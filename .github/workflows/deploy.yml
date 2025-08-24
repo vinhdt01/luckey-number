@@ -37,41 +37,33 @@ jobs:
         run: aws eks update-kubeconfig --name lucky-number --region ap-southeast-1
 
       - name: Deploy to EKS
+        env:
+          IMAGE_TAG: ${{ github.sha }}
         run: |
+          # Update the deployment YAML with the new image tag
+          sed -i "s|daothevinh123/lucky_numbers:latest|daothevinh123/lucky_numbers:${IMAGE_TAG}|g" k8s/deployment.yaml
+          
           # Apply deployment
           kubectl apply -f k8s/deployment.yaml
           
-          # Update image to trigger rollout
-          kubectl set image deployment/app app=daothevinh123/lucky_numbers:${{ github.sha }}
-          
-          # Show current status before waiting
+          # Show current status
           echo "=== Current Deployment Status ==="
           kubectl get deployment app -o wide
           kubectl get pods -l app=lucky-numbers -o wide
           
-          # Check events for any issues
+          # Check recent events
           echo "=== Recent Events ==="
-          kubectl get events --sort-by='.lastTimestamp' | tail -20
+          kubectl get events --sort-by='.lastTimestamp' | tail -10
           
-          # Get pod logs immediately
-          echo "=== Pod Logs ==="
-          kubectl logs -l app=lucky-numbers --tail=50 || echo "No logs available yet"
+          # Wait for rollout to complete
+          echo "=== Waiting for rollout to complete ==="
+          kubectl rollout status deployment/app --timeout=300s
           
-          # Wait a bit for pods to start
-          sleep 30
-          
-          # Check logs again
-          echo "=== Pod Logs After 30s ==="
-          kubectl logs -l app=lucky-numbers --tail=50
-          
-          # Describe failing pods
-          echo "=== Pod Details ==="
-          kubectl describe pods -l app=lucky-numbers
-          
-          # Try to wait for rollout with more tolerance
-          kubectl rollout status deployment/app --timeout=300s || echo "Rollout timed out, but continuing..."
-          
-          # Final status
+          # Get final status
           echo "=== Final Status ==="
           kubectl get pods -l app=lucky-numbers -o wide
           kubectl get service app-service
+          
+          # Get logs from new pods
+          echo "=== Application Logs ==="
+          kubectl logs -l app=lucky-numbers --tail=20

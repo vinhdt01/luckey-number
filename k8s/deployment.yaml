@@ -39,6 +39,17 @@ spec:
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command:
+              - pg_isready
+              - -U
+              - nestjs_user
+              - -d
+              - nestjs_db
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
       volumes:
       - name: postgres-storage
         emptyDir: {}
@@ -69,6 +80,11 @@ metadata:
     app: lucky-numbers
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: lucky-numbers
@@ -77,9 +93,22 @@ spec:
       labels:
         app: lucky-numbers
     spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z postgres-service 5432; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
       containers:
       - name: app
         image: daothevinh123/lucky_numbers:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 3000
         env:
@@ -87,9 +116,8 @@ spec:
           value: "production"
         - name: PORT
           value: "3000"
-        # Database connection environment variables
         - name: DB_HOST
-          value: "postgres-service"  # This points to the PostgreSQL service
+          value: "postgres-service"
         - name: DB_PORT
           value: "5432"
         - name: DB_USERNAME
@@ -100,25 +128,32 @@ spec:
           value: "nestjs_db"
         resources:
           limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
             memory: "256Mi"
             cpu: "250m"
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-        # Add health checks after database is working
+        startupProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
         livenessProbe:
           httpGet:
             path: /
             port: 3000
-          initialDelaySeconds: 120  # Wait longer for DB connection
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 5
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /
             port: 3000
-          initialDelaySeconds: 60
+          initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 5
           failureThreshold: 3
