@@ -38,14 +38,25 @@ jobs:
 
       - name: Deploy to EKS
         run: |
-          # Apply deployment (creates if doesn't exist, updates if exists)
+          # Apply deployment
           kubectl apply -f k8s/deployment.yaml
           
           # Update image to trigger rollout
           kubectl set image deployment/app app=daothevinh123/lucky_numbers:${{ github.sha }}
           
-          # Wait for rollout to complete
-          kubectl rollout status deployment/app --timeout=300s
+          # Show current status before waiting
+          echo "=== Current Deployment Status ==="
+          kubectl get deployment app -o wide
+          kubectl get pods -l app=lucky-numbers -o wide
           
-          # Show deployment status
-          kubectl get pods -l app=lucky-numbers
+          # Check events for any issues
+          echo "=== Recent Events ==="
+          kubectl get events --sort-by='.lastTimestamp' | tail -10
+          
+          # Wait for rollout with longer timeout
+          kubectl rollout status deployment/app --timeout=600s
+          
+          # Final status
+          echo "=== Final Status ==="
+          kubectl get pods -l app=lucky-numbers -o wide
+          kubectl describe deployment app
