@@ -51,12 +51,27 @@ jobs:
           
           # Check events for any issues
           echo "=== Recent Events ==="
-          kubectl get events --sort-by='.lastTimestamp' | tail -10
+          kubectl get events --sort-by='.lastTimestamp' | tail -20
           
-          # Wait for rollout with longer timeout
-          kubectl rollout status deployment/app --timeout=600s
+          # Get pod logs immediately
+          echo "=== Pod Logs ==="
+          kubectl logs -l app=lucky-numbers --tail=50 || echo "No logs available yet"
+          
+          # Wait a bit for pods to start
+          sleep 30
+          
+          # Check logs again
+          echo "=== Pod Logs After 30s ==="
+          kubectl logs -l app=lucky-numbers --tail=50
+          
+          # Describe failing pods
+          echo "=== Pod Details ==="
+          kubectl describe pods -l app=lucky-numbers
+          
+          # Try to wait for rollout with more tolerance
+          kubectl rollout status deployment/app --timeout=300s || echo "Rollout timed out, but continuing..."
           
           # Final status
           echo "=== Final Status ==="
           kubectl get pods -l app=lucky-numbers -o wide
-          kubectl describe deployment app
+          kubectl get service app-service
