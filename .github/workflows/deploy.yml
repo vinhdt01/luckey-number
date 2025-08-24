@@ -36,6 +36,81 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name lucky-number --region ap-southeast-1
 
+      - name: Debug EKS Cluster
+        run: |
+          echo "=== EKS Cluster Info ==="
+          aws eks describe-cluster --name lucky-number --region ap-southeast-1 --query 'cluster.{Name:name,Status:status,Endpoint:endpoint,Version:version}'
+          
+          echo "=== Node Groups ==="
+          aws eks list-nodegroups --cluster-name lucky-number --region ap-southeast-1
+          
+          echo "=== Kubernetes Nodes ==="
+          kubectl get nodes -o wide || echo "No nodes found or cluster unreachable"
+          
+          echo "=== Current Pods ==="
+          kubectl get pods --all-namespaces -o wide || echo "Cannot get pods"
+
+      - name: Create Node Group if Missing
+        run: |
+          # Check if any node groups exist
+          NODEGROUPS=$(aws eks list-nodegroups --cluster-name lucky-number --region ap-southeast-1 --query 'nodegroups' --output text)
+          
+          if [ "$NODEGROUPS" == "None" ] || [ -z "$NODEGROUPS" ]; then
+            echo "No node groups found. Creating one..."
+            
+            # Get cluster subnets
+            SUBNETS=$(aws eks describe-cluster --name lucky-number --region ap-southeast-1 --query 'cluster.resourcesVpcConfig.subnetIds' --output text | tr '\t' ',')
+            echo "Using subnets: $SUBNETS"
+            
+            # Create node group
+            aws eks create-nodegroup \
+              --cluster-name lucky-number \
+              --nodegroup-name lucky-number-workers \
+              --instance-types t3.medium \
+              --ami-type AL2_x86_64 \
+              --capacity-type ON_DEMAND \
+              --scaling-config minSize=1,maxSize=3,desiredSize=2 \
+              --disk-size 20 \
+              --subnets ${SUBNETS} \
+              --region ap-southeast-1 || echo "Failed to create node group - you may need to create it manually"
+              
+            echo "Waiting for node group to become active (this may take 10-15 minutes)..."
+            aws eks wait nodegroup-active --cluster-name lucky-number --nodegroup-name lucky-number-workers --region ap-southeast-1 --cli-read-timeout 900 || echo "Timeout waiting for node group"
+          else
+            echo "Node groups found: $NODEGROUPS"
+            
+            # Check node group status
+            for ng in $NODEGROUPS; do
+              echo "Checking node group: $ng"
+              aws eks describe-nodegroup --cluster-name lucky-number --nodegroup-name $ng --region ap-southeast-1 --query 'nodegroup.{Name:nodegroupName,Status:status,InstanceTypes:instanceTypes,ScalingConfig:scalingConfig}'
+            done
+          fi
+
+      - name: Wait for Nodes to be Ready
+        run: |
+          echo "Waiting for nodes to be ready..."
+          timeout=300
+          counter=0
+          while [ $counter -lt $timeout ]; do
+            ready_nodes=$(kubectl get nodes --no-headers | grep -c "Ready" || echo "0")
+            echo "Ready nodes: $ready_nodes"
+            
+            if [ "$ready_nodes" -gt "0" ]; then
+              echo "Nodes are ready!"
+              kubectl get nodes -o wide
+              break
+            fi
+            
+            sleep 10
+            counter=$((counter + 10))
+          done
+          
+          if [ $counter -ge $timeout ]; then
+            echo "Timeout waiting for nodes to be ready"
+            kubectl get nodes -o wide
+            exit 1
+          fi
+
       - name: Deploy to EKS
         run: |
           # Apply deployment
@@ -51,7 +126,7 @@ jobs:
           
           # Check events for any issues
           echo "=== Recent Events ==="
-          kubectl get events --sort-by='.lastTimestamp' | tail -10
+          kubectl get events --sort-by='.lastTimestamp' | tail -20
           
           # Wait for rollout with longer timeout
           kubectl rollout status deployment/app --timeout=600s
@@ -59,4 +134,8 @@ jobs:
           # Final status
           echo "=== Final Status ==="
           kubectl get pods -l app=lucky-numbers -o wide
-          kubectl describe deployment app
+          kubectl get service app-service
+          
+          # Get LoadBalancer URL if available
+          echo "=== LoadBalancer URL ==="
+          kubectl get service app-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "LoadBalancer not ready yet"

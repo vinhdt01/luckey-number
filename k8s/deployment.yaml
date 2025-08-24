@@ -5,7 +5,7 @@ metadata:
   labels:
     app: lucky-numbers
 spec:
-  replicas: 3
+  replicas: 2  # Reduced from 3 to be more resource-friendly
   selector:
     matchLabels:
       app: lucky-numbers
@@ -24,23 +24,27 @@ spec:
           value: "production"
         resources:
           limits:
-            memory: "512Mi"
-            cpu: "500m"
-          requests:
-            memory: "256Mi"
+            memory: "256Mi"  # Reduced for better scheduling
             cpu: "250m"
+          requests:
+            memory: "128Mi"  # Reduced for better scheduling
+            cpu: "100m"
         livenessProbe:
           httpGet:
             path: /
             port: 3000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60  # Increased delay
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /
             port: 3000
-          initialDelaySeconds: 5
+          initialDelaySeconds: 30  # Increased delay
           periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
